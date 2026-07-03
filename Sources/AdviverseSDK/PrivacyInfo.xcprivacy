@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Privacy manifest for AdviverseSDK (Apple-required for third-party SDKs, esp.
+      ad SDKs that access the IDFA / use required-reason APIs). Declares:
+        - Tracking: the SDK can use the IDFA to attribute installs / personalize
+          ads across apps, which Apple defines as tracking.
+        - Collected data: the device identifiers the SDK sends to the ad engine.
+        - Required-reason API: UserDefaults (persisting the SDK's own first-party id).
+    -->
+
+    <!-- The SDK engages in tracking (IDFA-based attribution / cross-app ads). -->
+    <key>NSPrivacyTracking</key>
+    <true/>
+
+    <!--
+      Domains that receive data used for tracking. iOS BLOCKS these when the user
+      hasn't granted ATT. IMPORTANT (decision for you + counsel): do NOT list the
+      ad-SERVING host (serve.adviverse.com) here, or ads stop serving entirely
+      under ATT-denied — the engine already serves contextual (non-personalized)
+      ads without the IDFA in that case. List only a dedicated measurement /
+      postback host that fires solely with consent, if you run one.
+    -->
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- Data the SDK collects. Device IDs (IDFA + IDFV) sent to the engine. -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeDeviceID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Required-reason API usage. -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <!-- UserDefaults: persist the SDK's own first-party id (app-scoped). -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

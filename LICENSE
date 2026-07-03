@@ -1,0 +1,53 @@
+Adviverse iOS SDK — Proprietary License
+
+Copyright (c) 2026 Adviverse. All rights reserved.
+
+IMPORTANT: This is a proprietary-license TEMPLATE. Have your legal counsel review
+and finalize it (and reconcile it with your Master Services / Publisher Terms)
+before you rely on it. It is provided as a starting point, not legal advice.
+
+1. Definitions.
+   "SDK" means this software (the AdviverseSDK library, source, and any
+   accompanying files). "Service" means the Adviverse advertising network and its
+   APIs. "You" means the individual or entity integrating the SDK.
+
+2. License grant.
+   Subject to your continuous compliance with this License and the Adviverse
+   Publisher/Developer Terms, Adviverse grants You a limited, non-exclusive,
+   non-transferable, non-sublicensable, revocable license to install and use the
+   SDK, in unmodified form, solely to integrate your application(s) with the
+   Service.
+
+3. Restrictions.
+   Except as expressly permitted above, You may not: (a) modify, adapt, or create
+   derivative works of the SDK; (b) reverse engineer, decompile, or disassemble
+   the SDK except to the extent applicable law expressly permits; (c) remove or
+   alter any proprietary notices; (d) redistribute, sell, sublicense, rent, or
+   lease the SDK on a standalone basis; or (e) use the SDK to build or operate a
+   competing advertising network.
+
+4. Ownership.
+   The SDK is licensed, not sold. Adviverse and its licensors retain all right,
+   title, and interest in and to the SDK, including all intellectual property
+   rights. No rights are granted except as expressly set out here.
+
+5. Privacy & platform rules.
+   You are responsible for your own compliance with Apple's App Store Review
+   Guidelines, App Tracking Transparency, applicable privacy laws, and for
+   obtaining any user consent required for the data your app and the SDK process.
+
+6. No warranty.
+   THE SDK IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+7. Limitation of liability.
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, ADVIVERSE SHALL NOT BE LIABLE FOR ANY
+   INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY DAMAGES, OR FOR ANY
+   LOSS OF PROFITS, DATA, OR GOODWILL, ARISING OUT OF OR RELATED TO THE SDK.
+
+8. Termination.
+   This License terminates automatically if You breach it. On termination, You
+   must stop using and delete all copies of the SDK.
+
+For licensing questions, contact: legal@adviverse.com
