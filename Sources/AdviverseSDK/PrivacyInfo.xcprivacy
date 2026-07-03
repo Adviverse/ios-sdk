@@ -17,11 +17,18 @@
 
     <!--
       Domains that receive data used for tracking. iOS BLOCKS these when the user
-      hasn't granted ATT. IMPORTANT (decision for you + counsel): do NOT list the
-      ad-SERVING host (serve.adviverse.com) here, or ads stop serving entirely
-      under ATT-denied — the engine already serves contextual (non-personalized)
-      ads without the IDFA in that case. List only a dedicated measurement /
-      postback host that fires solely with consent, if you run one.
+      hasn't granted ATT.
+
+      Intentionally EMPTY. The SDK sends the IDFA (the only cross-app tracking
+      identifier) ONLY when AppTrackingTransparency is authorized (see
+      currentIdentity() -> attAuthorized() in Adviverse.swift). Without consent it
+      sends lmt=1, no IDFA, and only an app-scoped first-party id for in-app
+      frequency capping — i.e. no tracking data leaves the device. The ad-serving
+      host (serve.adviverse.com) therefore does not collect tracking data absent
+      consent, so it is not listed here; listing it would have iOS block the
+      connection under ATT-denied and stop legitimate contextual (IDFA-free) ad
+      serving. If you later add a dedicated measurement host that fires only with
+      consent, add it here.
     -->
     <key>NSPrivacyTrackingDomains</key>
     <array/>
