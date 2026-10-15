@@ -66,8 +66,12 @@ public final class AdviverseRewarded: NSObject {
         super.init()
     }
 
-    /// True once both the ad and its creative image have been preloaded.
-    public var isReady: Bool { ad != nil && preloadedImage != nil }
+    /// Ready to show: a static creative needs its image; a playable (html5)
+    /// needs only the ad (the bundle loads in the WebView at show time).
+    public var isReady: Bool { ad != nil && (preloadedImage != nil || !needsImage) }
+
+    /// Playables (WebView) and video (AVPlayer) load at show time — no image.
+    private var needsImage: Bool { ad.map(AdviverseFullscreen.needsImage) ?? true }
 
     /// Preload the rewarded ad. Call `show()` once `isReady` (or wait for
     /// `rewardedDidLoad`).
@@ -79,6 +83,10 @@ public final class AdviverseRewarded: NSObject {
                 self.delegate?.rewarded(self, didFailToLoadWithError: error)
             case .success(let ad):
                 self.ad = ad
+                if !AdviverseFullscreen.needsImage(ad) {
+                    self.delegate?.rewardedDidLoad(self)
+                    return
+                }
                 AdviverseFullscreen.preloadImage(for: ad) { [weak self] image in
                     guard let self = self else { return }
                     guard let image = image else {
@@ -96,7 +104,7 @@ public final class AdviverseRewarded: NSObject {
     /// Present the full-screen rewarded ad. Pass an explicit presenter, or let
     /// the SDK resolve the top-most view controller over the key window.
     public func show(from presenter: UIViewController? = nil) {
-        guard let ad = ad, let image = preloadedImage else {
+        guard let ad = ad, (preloadedImage != nil || !needsImage) else {
             delegate?.rewarded(self, didFailToLoadWithError: .invalidResponse)
             return
         }
@@ -105,8 +113,13 @@ public final class AdviverseRewarded: NSObject {
             return
         }
         rewardEarnedLocally = false
-        let vc = AdviverseFullscreenViewController(ad: ad, image: image,
-                                                   closeDelay: 0, isRewarded: true)
+        // Playable → WebView, video (hosted or VAST-resolved) → AVPlayer,
+        // static → image. All expose the same callbacks.
+        guard let vc = AdviverseFullscreen.controller(for: ad, image: preloadedImage,
+                                                      closeDelay: 0, isRewarded: true) else {
+            delegate?.rewarded(self, didFailToLoadWithError: .invalidResponse)
+            return
+        }
         vc.modalPresentationStyle = .fullScreen
         vc.onImpression = { [weak self] in
             guard let self = self else { return }

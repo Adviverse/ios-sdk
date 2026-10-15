@@ -64,8 +64,13 @@ public final class AdviverseInterstitial: NSObject {
         super.init()
     }
 
-    /// True once both the ad and its creative image have been preloaded.
-    public var isReady: Bool { ad != nil && preloadedImage != nil }
+    /// True once the ad is ready to show: a static creative needs its image
+    /// preloaded; a playable (html5) needs only the ad (the bundle loads in the
+    /// WebView at show time).
+    public var isReady: Bool { ad != nil && (preloadedImage != nil || !needsImage) }
+
+    /// Playables (WebView) and video (AVPlayer) load at show time — no image.
+    private var needsImage: Bool { ad.map(AdviverseFullscreen.needsImage) ?? true }
 
     /// Preload the interstitial. Call `show()` once `isReady` (or wait for
     /// `interstitialDidLoad`).
@@ -77,6 +82,12 @@ public final class AdviverseInterstitial: NSObject {
                 self.delegate?.interstitial(self, didFailToLoadWithError: error)
             case .success(let ad):
                 self.ad = ad
+                // Playables load their bundle in the WebView at show time — no
+                // image to preload, so they're ready as soon as the ad arrives.
+                if !AdviverseFullscreen.needsImage(ad) {
+                    self.delegate?.interstitialDidLoad(self)
+                    return
+                }
                 AdviverseFullscreen.preloadImage(for: ad) { [weak self] image in
                     guard let self = self else { return }
                     guard let image = image else {
@@ -94,7 +105,7 @@ public final class AdviverseInterstitial: NSObject {
     /// Present the full-screen ad. Pass an explicit presenter, or let the SDK
     /// resolve the top-most view controller over the key window.
     public func show(from presenter: UIViewController? = nil) {
-        guard let ad = ad, let image = preloadedImage else {
+        guard let ad = ad, (preloadedImage != nil || !needsImage) else {
             delegate?.interstitial(self, didFailToLoadWithError: .invalidResponse)
             return
         }
@@ -102,8 +113,14 @@ public final class AdviverseInterstitial: NSObject {
             delegate?.interstitial(self, didFailToLoadWithError: .invalidResponse)
             return
         }
-        let vc = AdviverseFullscreenViewController(ad: ad, image: image,
-                                                   closeDelay: closeDelay, isRewarded: false)
+        // Playable → WebView, video (hosted or VAST-resolved) → AVPlayer,
+        // static → image. All expose the same onImpression/onClick/onClose
+        // callbacks, so the wiring below is shared.
+        guard let vc = AdviverseFullscreen.controller(for: ad, image: preloadedImage,
+                                                      closeDelay: closeDelay, isRewarded: false) else {
+            delegate?.interstitial(self, didFailToLoadWithError: .invalidResponse)
+            return
+        }
         vc.modalPresentationStyle = .fullScreen
         vc.onImpression = { [weak self] in
             guard let self = self else { return }
@@ -129,7 +146,7 @@ public final class AdviverseInterstitial: NSObject {
 /// Renders a preloaded creative image full-bleed, fires the impression (and the
 /// SKAdNetwork view-through) on appear, reveals a close button after a delay,
 /// and routes taps through the ad's click beacon + landing page.
-final class AdviverseFullscreenViewController: UIViewController {
+final class AdviverseFullscreenViewController: UIViewController, AdviverseFullscreenCallbacks {
 
     private let ad: AdviverseAd
     private let image: UIImage

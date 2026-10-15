@@ -3,7 +3,7 @@
 //  AdviverseSDK
 //
 //  SKAdNetwork (StoreKit ad-attribution) plumbing. The base SDK only MODELS the
-//  `skadn` block (see `AdviverseSKAdNetwork` in Adviverse.swift); this file adds
+//  `skadn` block (see `AdviverseSKAdNetwork` below); this file adds
 //  the actual StoreKit registration: when the engine returns a SIGNED `skadn`
 //  block for an iOS app-install campaign, the SDK registers the view-through
 //  impression with StoreKit using the values the SERVER provided.
@@ -21,6 +21,63 @@
 //
 
 import Foundation
+
+/// The SKAdNetwork attribution block (iOS only). Surfaced verbatim so an
+/// integrator can drive StoreKit (`SKAdNetwork.updateConversionValue` etc.).
+///
+/// IMPORTANT: when `signaturePlaceholder == true` the `signature` is NOT a
+/// valid Apple signature — a production-attributable value must be produced
+/// server-side by signing Apple's field ordering with the network's SKAdNetwork
+/// private key. Do not submit a placeholder-signed payload to StoreKit expecting
+/// attribution; use it only to wire up the integration in non-production.
+public struct AdviverseSKAdNetwork: Decodable {
+    public let version: String
+    public let network: String
+    public let campaign: String
+    public let sourceIdentifier: String
+    public let itunesItem: String
+    public let sourceApp: String?
+    public let fidelityType: String?
+    public let nonce: String
+    public let timestamp: Int64
+    public let signature: String
+    public let signaturePlaceholder: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case version, network, campaign, nonce, timestamp, signature
+        case sourceIdentifier = "source_identifier"
+        case itunesItem = "itunesitem"
+        case sourceApp = "sourceapp"
+        case fidelityType = "fidelity_type"
+        case signaturePlaceholder = "signature_placeholder"
+    }
+
+    /// True only when the server signed with a real key. Gate any StoreKit
+    /// attribution call on this.
+    public var isSigned: Bool { !signaturePlaceholder }
+
+    /// The dictionary an iOS app passes to StoreKit's attribution APIs, with
+    /// Apple's canonical key names.
+    public var attributionDictionary: [String: Any] {
+        var d: [String: Any] = [
+            "version": version,
+            "network": network,
+            "campaign": campaign,
+            "source-identifier": sourceIdentifier,
+            "itunes-item-identifier": itunesItem,
+            "nonce": nonce,
+            "timestamp": String(timestamp),
+            "signature": signature
+        ]
+        if let sourceApp = sourceApp, !sourceApp.isEmpty {
+            d["source-app-store-item-identifier"] = sourceApp
+        }
+        if let fidelityType = fidelityType, !fidelityType.isEmpty {
+            d["fidelity-type"] = fidelityType
+        }
+        return d
+    }
+}
 
 public extension Adviverse {
 
@@ -53,25 +110,45 @@ private extension Adviverse {
     /// Build an `SKAdImpression` from the server payload and register it as a
     /// view-through impression. The signature is taken as-is from the engine.
     static func startSKAdImpression(_ s: AdviverseSKAdNetwork) {
-        // All of these are required by StoreKit; bail if the engine omitted any.
+        // Required across all SKAdNetwork versions; bail if the engine omitted any.
         guard
             !s.network.isEmpty,
-            let campaign = decimalNumber(s.campaign),
             let itunesItem = decimalNumber(s.itunesItem),
-            let nonceUUID = UUID(uuidString: s.nonce),
+            UUID(uuidString: s.nonce) != nil,   // validate shape; forward as-is below
             !s.signature.isEmpty
         else { return }
 
         let imp = SKAdImpression()
         imp.adNetworkIdentifier = s.network                 // e.g. "example123.skadnetwork"
         imp.advertisedAppStoreItemIdentifier = itunesItem   // target app's App Store id
-        imp.adImpressionIdentifier = nonceUUID.uuidString   // nonce (UUID string)
-        imp.adCampaignIdentifier = campaign                 // SKAN campaign id (1...100 for <4.0)
+        // The nonce must be the EXACT lowercase string the server signed. Swift's
+        // `UUID.uuidString` uppercases, which would NOT match the signed bytes and
+        // Apple would silently reject the impression — so forward the raw string.
+        imp.adImpressionIdentifier = s.nonce
         imp.timestamp = NSNumber(value: s.timestamp)
         imp.signature = s.signature                         // SERVER-SIGNED, never local
         imp.version = s.version                             // SKAdNetwork version string
-        // Publisher app's App Store id — optional in the payload + the API.
-        if let sourceApp = s.sourceApp, let sourceItem = decimalNumber(sourceApp) {
+
+        // Campaign vs. source identifier is version-dependent and must match what
+        // the server signed. SKAdNetwork 4.0 uses a 2–4 digit `sourceIdentifier`
+        // (iOS 16.1+); 2.2/3.0 use `adCampaignIdentifier` (1…100, deprecated in 4.0).
+        if s.version.hasPrefix("4") {
+            guard #available(iOS 16.1, *), let src = decimalNumber(s.sourceIdentifier) else {
+                // 4.0 signature but the OS predates `sourceIdentifier` — StoreKit
+                // cannot register it. Drop rather than send an invalid impression.
+                return
+            }
+            imp.sourceIdentifier = src
+        } else {
+            guard let campaign = decimalNumber(s.campaign) else { return }
+            imp.adCampaignIdentifier = campaign
+        }
+
+        // Publisher app's numeric App Store id. Engine signs "0" when unavailable
+        // and Apple wants the property left unset in that case, so skip a 0/absent
+        // value (the signed "0" and an unset property validate consistently).
+        if let sourceApp = s.sourceApp, let sourceItem = decimalNumber(sourceApp),
+           sourceItem != 0 {
             imp.sourceAppStoreItemIdentifier = sourceItem
         }
 

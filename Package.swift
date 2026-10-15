@@ -24,6 +24,13 @@ let package = Package(
             resources: [
                 .copy("PrivacyInfo.xcprivacy")
             ]
+        ),
+        // Pure-logic tests (VAST parser/resolver). Run on an iOS Simulator:
+        //   xcodebuild test -scheme AdviverseSDK -destination 'platform=iOS Simulator,name=…'
+        .testTarget(
+            name: "AdviverseSDKTests",
+            dependencies: ["AdviverseSDK"],
+            path: "Tests/AdviverseSDKTests"
         )
     ]
 )

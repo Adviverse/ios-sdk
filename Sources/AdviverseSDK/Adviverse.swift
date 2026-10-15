@@ -96,6 +96,9 @@ public struct AdviverseCreative: Decodable {
     public let duration: Double?
     public let skipOffsetSec: Int?
     public let vpaidURL: String?
+    /// Third-party VAST tag (video). When `assetURL` is empty the SDK resolves
+    /// it during load; the result is exposed as `AdviverseAd.vast` / `videoURL`.
+    public let vastTagURL: String?
 
     enum CodingKeys: String, CodingKey {
         case id, type, title, description, cta, width, height, duration
@@ -105,69 +108,13 @@ public struct AdviverseCreative: Decodable {
         case brandName = "brand_name"
         case skipOffsetSec = "skip_offset_sec"
         case vpaidURL = "vpaid_url"
+        case vastTagURL = "vast_tag_url"
     }
 
     /// Best image to render for a banner: the explicit main image, else the
     /// generic asset, else the icon.
     public var bannerImageURL: String? {
         mainImageURL ?? assetURL ?? iconURL
-    }
-}
-
-/// The SKAdNetwork attribution block (iOS only). Surfaced verbatim so an
-/// integrator can drive StoreKit (`SKAdNetwork.updateConversionValue` etc.).
-///
-/// IMPORTANT: when `signaturePlaceholder == true` the `signature` is NOT a
-/// valid Apple signature — a production-attributable value must be produced
-/// server-side by signing Apple's field ordering with the network's SKAdNetwork
-/// private key. Do not submit a placeholder-signed payload to StoreKit expecting
-/// attribution; use it only to wire up the integration in non-production.
-public struct AdviverseSKAdNetwork: Decodable {
-    public let version: String
-    public let network: String
-    public let campaign: String
-    public let sourceIdentifier: String
-    public let itunesItem: String
-    public let sourceApp: String?
-    public let fidelityType: String?
-    public let nonce: String
-    public let timestamp: Int64
-    public let signature: String
-    public let signaturePlaceholder: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case version, network, campaign, nonce, timestamp, signature
-        case sourceIdentifier = "source_identifier"
-        case itunesItem = "itunesitem"
-        case sourceApp = "sourceapp"
-        case fidelityType = "fidelity_type"
-        case signaturePlaceholder = "signature_placeholder"
-    }
-
-    /// True only when the server signed with a real key. Gate any StoreKit
-    /// attribution call on this.
-    public var isSigned: Bool { !signaturePlaceholder }
-
-    /// The dictionary an iOS app passes to StoreKit's attribution APIs, with
-    /// Apple's canonical key names.
-    public var attributionDictionary: [String: Any] {
-        var d: [String: Any] = [
-            "version": version,
-            "network": network,
-            "campaign": campaign,
-            "source-identifier": sourceIdentifier,
-            "itunes-item-identifier": itunesItem,
-            "nonce": nonce,
-            "timestamp": String(timestamp),
-            "signature": signature
-        ]
-        if let sourceApp = sourceApp, !sourceApp.isEmpty {
-            d["source-app-store-item-identifier"] = sourceApp
-        }
-        if let fidelityType = fidelityType, !fidelityType.isEmpty {
-            d["fidelity-type"] = fidelityType
-        }
-        return d
     }
 }
 
@@ -190,6 +137,10 @@ public struct AdviverseAd: Decodable {
     /// Set by the loader after decode so the beacons can be made absolute.
     /// Internal: not part of the wire contract.
     internal var baseURL: URL?
+
+    /// The resolved third-party VAST chain, set by the loader for a creative
+    /// that carries `vast_tag_url` instead of a hosted asset. nil otherwise.
+    public internal(set) var vast: AdviverseVASTResult?
 
     enum CodingKeys: String, CodingKey {
         case requestID = "request_id"
@@ -216,17 +167,22 @@ public struct AdviverseAd: Decodable {
     /// engine's `/click` beacon both records the click and 302-redirects to the
     /// advertiser landing page, so opening this URL counts the click *and*
     /// navigates — no separate redirect handling required.
-    public var landingURL: URL? { clickURL }
+    /// For a third-party VAST creative this is the VAST `<ClickThrough>` (our
+    /// click is then recorded by `fireClick()` via `/click?…&track=1`).
+    public var landingURL: URL? { vast?.clickThrough ?? clickURL }
 
     // Impression/click are billable; the SDK fires each at most once per ad
     // instance. A reference type box guards against accidental double counting.
     private let fireState = FireState()
+    /// Per-ad dedup for video lifecycle events (see AdviverseVAST.swift).
+    let videoState = AdviverseVideoEventState()
 
     /// Send the impression beacon (idempotent per ad instance). Call when the
     /// creative is actually on screen.
     public func fireImpression() {
         guard fireState.markImpression(), let url = impressionURL else { return }
         Adviverse.sendBeacon(url)
+        if let v = vast { AdviverseVAST.fire(v.impressions) }
     }
 
     /// Send the click beacon (idempotent per ad instance). Call on tap. To also
@@ -236,7 +192,12 @@ public struct AdviverseAd: Decodable {
     /// open is blocked.
     public func fireClick() {
         guard fireState.markClick() else { return }
+        if let v = vast { AdviverseVAST.fire(v.clickTrackings) }
         guard let url = clickURL else { return }
+        // Third-party ClickThrough: record our click as a pixel (no redirect).
+        if vast?.clickThrough != nil, let tracked = URL(string: url.absoluteString + "&track=1") {
+            return Adviverse.sendBeacon(tracked)
+        }
         Adviverse.sendBeacon(url)
     }
 
@@ -269,7 +230,7 @@ public final class Adviverse {
 
     /// SemVer of this SDK, sent as `v` alongside `client=ios-sdk` so the engine's
     /// version gate can no-fill an outdated/exploitable build.
-    public static let version = "1.0.0"
+    public static let version = "1.1.0"
     private static let clientName = "ios-sdk"
 
     /// Default serving host. Override via `configure(baseURL:)` for staging or a
@@ -402,7 +363,9 @@ public final class Adviverse {
             do {
                 var ad = try JSONDecoder().decode(AdviverseAd.self, from: data)
                 ad.baseURL = base
-                self.deliver(.success(ad), to: completion)
+                // A third-party VAST creative is resolved to a playable MediaFile
+                // before success is reported (failure → .noFill + error beacons).
+                AdviverseVAST.attach(to: ad) { self.deliver($0, to: completion) }
             } catch {
                 self.deliver(.failure(.decoding(error)), to: completion)
             }
@@ -459,7 +422,9 @@ public final class Adviverse {
             URLQueryItem(name: "tag", value: tag),
             URLQueryItem(name: "format", value: format.rawValue),
             URLQueryItem(name: "client", value: Adviverse.clientName),
-            URLQueryItem(name: "v", value: Adviverse.version)
+            URLQueryItem(name: "v", value: Adviverse.version),
+            // Capability: this SDK resolves third-party VAST wrapper creatives.
+            URLQueryItem(name: "vast", value: "1")
         ]
         // Identity: always send the stable first-party uid; send the ifa only
         // when ATT permits, and always send lmt so the server knows the state.

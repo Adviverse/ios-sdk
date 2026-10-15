@@ -53,6 +53,22 @@ banner.load()                                       // uses the configured tag
 The view loads the creative, fires the impression once it's actually on screen,
 and on tap fires the click beacon and opens the advertiser landing page.
 
+### SwiftUI
+
+```swift
+import AdviverseSDK
+
+struct HomeView: View {
+    var body: some View {
+        AdviverseBannerView(placement: "home-banner", size: .banner)
+            .frame(width: 320, height: 50)
+    }
+}
+```
+
+`AdviverseBannerView` wraps `AdviverseAdView`; changing `placement` or `size`
+reloads the ad.
+
 ### Load an ad yourself
 
 ```swift
@@ -177,3 +193,26 @@ never client-side.
 | `AdviverseAdView` | Drop-in UIKit banner + `AdviverseAdViewDelegate` |
 | `AdviverseAdSize` / `AdviverseFormat` | Request size & format |
 | `AdviverseError` | `.noFill`, `.badStatus`, `.decoding`, … |
+
+
+## Playable (interactive HTML5) ads
+
+No new API. If a rewarded or interstitial placement serves a **playable**
+(`type: html5`) creative, `AdviverseInterstitial` / `AdviverseRewarded` present it
+automatically in a locked-down `WKWebView` instead of a static image — the bundle
+loads from the CDN, talks to the SDK only through a message handler, and its
+`ready` / `click` / `finish` map onto the same impression / click-through /
+`didGrantReward` you already handle. Nothing to change in your integration.
+
+## Video & third-party VAST (1.1.0+)
+
+Interstitial / rewarded video creatives play full-screen in `AVPlayer`
+(impression on first frame, start/quartile/complete tracking, a Skip control
+after `skipoffset` / `skip_offset_sec` on interstitials). A creative may carry a
+third-party VAST tag (`creative.vastTagURL`) instead of a hosted asset: the SDK
+sends `vast=1` and resolves the tag during `loadAd` — Wrapper chain (≤5 hops),
+MediaFile pick (mp4 first; VPAID skipped) — so the load succeeds only once a
+playable MediaFile exists; any failure fires the VAST `<Error>` URLs and reports
+`.noFill`. Custom renderers read `ad.videoURL` / `ad.vast`, call
+`ad.fireVideoEvent("firstQuartile")` etc., and `fireClick()` + open `landingURL`
+(the VAST ClickThrough; our click is recorded via `&track=1`).
