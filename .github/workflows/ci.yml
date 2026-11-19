@@ -10,4 +10,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - run: |
-          swift build
+          xcodebuild -scheme AdviverseSDK -destination 'generic/platform=iOS Simulator' -quiet build
